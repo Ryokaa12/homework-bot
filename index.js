@@ -283,8 +283,119 @@ cron.schedule('* * * * *', async () => {
   }
 }, { timezone: 'Asia/Bangkok' });
 
+/* ---------------- เว็บจัดการการบ้าน (/web) ----------------
+   ใช้ข้อมูลชุดเดียวกับบอท: เพิ่มการบ้าน/ตั้งแจ้งเตือนในเว็บ → บอทส่งข้อความเข้ากลุ่ม */
+const path = require('path');
+const pushText = (to, t) => client.pushMessage({ to, messages: [text(t)] });
+
+async function groupName(gid, g) {
+  if (!g.name) {
+    try {
+      if (gid.startsWith('C')) g.name = (await client.getGroupSummary(gid)).groupName;
+      else if (gid.startsWith('R')) g.name = 'ห้องแชท ' + gid.slice(1, 6);
+      else g.name = 'แชทส่วนตัว';
+      save();
+    } catch (_) {}
+  }
+  return g.name || gid.slice(0, 8);
+}
+
+function mountWeb(app) {
+  const r = express.Router();
+  r.use(express.json());
+  r.get('/', (_, res) => res.sendFile(path.join(__dirname, 'web.html')));
+
+  r.use('/api', (req, res, next) => {
+    const pw = process.env.ADMIN_PASSWORD;
+    if (pw && req.get('x-password') !== pw) return res.status(401).json({ error: 'รหัสผ่านไม่ถูกต้อง' });
+    next();
+  });
+  const wrap = (fn) => (req, res) =>
+    Promise.resolve(fn(req, res)).catch((e) => {
+      console.error('web api', e.message);
+      res.status(500).json({ error: e.message });
+    });
+  const grp = (req, res) => {
+    const g = db.groups[req.params.gid];
+    if (!g) res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
+    return g;
+  };
+
+  r.get('/api/groups', wrap(async (_, res) => {
+    const out = [];
+    for (const [id, g] of Object.entries(db.groups)) out.push({ id, name: await groupName(id, g) });
+    res.json(out);
+  }));
+
+  r.get('/api/groups/:gid', wrap(async (req, res) => {
+    const g = grp(req, res); if (!g) return;
+    res.json({ homework: g.homework, settings: g.settings, today: today() });
+  }));
+
+  r.post('/api/groups/:gid/homework', wrap(async (req, res) => {
+    const g = grp(req, res); if (!g) return;
+    const { subject, title, due, notifyNow } = req.body || {};
+    if (!subject || !title || !/^\d{4}-\d\d-\d\d$/.test(due || '')) {
+      return res.status(400).json({ error: 'กรอกวิชา ชื่องาน และวันส่งให้ครบ' });
+    }
+    const h = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      subject: String(subject).slice(0, 30), title: String(title).slice(0, 100),
+      due, done: false, addedBy: 'web',
+    };
+    g.homework.push(h); save();
+    let notified = false;
+    if (notifyNow) {
+      try {
+        await pushText(req.params.gid,
+          `🆕 มีการบ้านใหม่\n📖 ${h.subject}: ${h.title}\n📅 ส่ง ${fmt(h.due)} (${leftText(daysLeft(h.due))})\n\nอย่าลืมส่งในกลุ่มนะทุกคน 🙌`);
+        notified = true;
+      } catch (e) { console.error('push new hw', e.message); }
+    }
+    res.json({ ok: true, notified });
+  }));
+
+  r.put('/api/groups/:gid/homework/:id', wrap(async (req, res) => {
+    const g = grp(req, res); if (!g) return;
+    const h = g.homework.find((x) => x.id === req.params.id);
+    if (!h) return res.status(404).json({ error: 'ไม่พบการบ้านนี้' });
+    if (typeof req.body.done === 'boolean') h.done = req.body.done;
+    save(); res.json({ ok: true });
+  }));
+
+  r.delete('/api/groups/:gid/homework/:id', wrap(async (req, res) => {
+    const g = grp(req, res); if (!g) return;
+    g.homework = g.homework.filter((x) => x.id !== req.params.id);
+    save(); res.json({ ok: true });
+  }));
+
+  r.put('/api/groups/:gid/settings', wrap(async (req, res) => {
+    const g = grp(req, res); if (!g) return;
+    const { days, hour } = req.body || {};
+    if (Array.isArray(days)) {
+      g.settings.days = [...new Set(days.map(Number))].filter((d) => Number.isInteger(d) && d >= 0 && d <= 7).sort();
+    }
+    if (Number.isInteger(hour) && hour >= 0 && hour <= 21) {
+      if (hour !== g.settings.hour) g.lastSent = '';
+      g.settings.hour = hour;
+    }
+    save(); res.json({ ok: true });
+  }));
+
+  // ส่งแจ้งเตือนเข้ากลุ่มตอนนี้ (ปุ่มทดสอบ)
+  r.post('/api/groups/:gid/remind', wrap(async (req, res) => {
+    const g = grp(req, res); if (!g) return;
+    const msg = reminderText(g) || '🔔 ทดสอบแจ้งเตือนจากเว็บ — ตอนนี้ยังไม่มีการบ้านที่ตรงกับเงื่อนไขแจ้งเตือน';
+    try { await pushText(req.params.gid, msg); res.json({ ok: true }); }
+    catch (e) { res.status(400).json({ error: 'บอทส่งเข้ากลุ่มไม่ได้ (' + e.message + ')' }); }
+  }));
+
+  app.use('/web', r);
+}
+
 /* ---------------- เซิร์ฟเวอร์ ---------------- */
 const app = express();
+mountWeb(app);
 app.get('/', (_, res) => res.send('Homework bot is running'));
 app.post('/webhook', line.middleware(config), (req, res) => {
   Promise.all(req.body.events.map((e) => handleEvent(e).catch((err) => console.error(err))))

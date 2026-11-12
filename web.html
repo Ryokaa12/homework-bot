@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>การบ้านของห้อง</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#EAEFF4;--surface:#fff;--ink:#14212B;--muted:#5B6B78;--line:#D3DCE4;--green:#06C755;--green-d:#04913D;--amber:#B7791F;--red:#C0392B;--focus:#1F6FEB}
+@media (prefers-color-scheme:dark){:root{--bg:#0F171E;--surface:#18232C;--ink:#E8EEF3;--muted:#93A3B0;--line:#2B3A46;--green-d:#3DDC84;--amber:#E0A648;--red:#F0786B}}
+*{box-sizing:border-box}
+html{font-family:"IBM Plex Sans Thai",system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+body{margin:0;padding:20px 16px 60px}
+main{max-width:640px;margin:0 auto}
+h1{font-size:1.5rem;font-weight:600;margin:8px 0 12px}
+h2{font-size:1.05rem;font-weight:600;margin:0 0 12px}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+nav{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:20px}
+nav button{background:none;border:0;border-bottom:3px solid transparent;padding:10px 14px;font:inherit;font-weight:500;color:var(--muted);cursor:pointer}
+nav button[aria-selected=true]{color:var(--ink);border-color:var(--green)}
+[hidden]{display:none!important}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:20px}
+label{display:block;font-weight:500;font-size:.92rem;margin:12px 0 4px}
+input[type=text],input[type=date],select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+.row{display:flex;gap:12px}.row>*{flex:1}
+@media(max-width:480px){.row{flex-direction:column;gap:0}}
+.check{display:flex;align-items:center;gap:8px;font-weight:400;margin:8px 0}
+.check input{width:18px;height:18px;accent-color:var(--green)}
+.btn{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:9px 16px;cursor:pointer}
+.btn.primary{background:var(--green);border-color:var(--green);color:#04210F;font-weight:600}
+.btn.small{padding:4px 10px;font-size:.85rem}
+.btn.danger{color:var(--red)}
+.btn:disabled{opacity:.5;cursor:wait}
+.actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+.hw{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--green);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.hw.soon{border-left-color:var(--amber)}.hw.late{border-left-color:var(--red)}.hw.done{border-left-color:var(--line);opacity:.7}
+.hw .top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.hw .subj{font-size:.85rem;color:var(--muted);font-weight:500}
+.hw .title{font-weight:600}
+.hw .meta{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.badge{font-size:.8rem;font-weight:600;border-radius:999px;padding:2px 10px;background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green-d)}
+.soon .badge{background:color-mix(in srgb,var(--amber) 20%,transparent);color:var(--amber)}
+.late .badge{background:color-mix(in srgb,var(--red) 20%,transparent);color:var(--red)}
+.empty{color:var(--muted);text-align:center;padding:24px 8px}
+.hint{color:var(--muted);font-size:.85rem;margin:4px 0 0}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:.92rem;max-width:90vw}
+.toast.err{background:var(--red);color:#fff}
+</style>
+</head>
+<body>
+<main>
+  <h1>การบ้านของห้อง</h1>
+  <div id="grp-wrap" class="panel" hidden>
+    <label for="grp" style="margin-top:0">กลุ่มที่จะแจ้งเตือน</label>
+    <select id="grp"></select>
+  </div>
+  <p class="empty" id="no-grp" hidden>ยังไม่มีกลุ่ม เชิญบอทเข้ากลุ่ม LINE แล้วพิมพ์ "เมนู" ในกลุ่ม จากนั้นรีเฟรชหน้านี้</p>
+
+  <div id="app" hidden>
+    <nav role="tablist">
+      <button role="tab" id="t-hw" aria-selected="true">การบ้าน</button>
+      <button role="tab" id="t-set" aria-selected="false">ตั้งค่าแจ้งเตือน</button>
+    </nav>
+
+    <section id="p-hw">
+      <div class="panel">
+        <h2>เพิ่มการบ้าน</h2>
+        <div class="row">
+          <div><label for="f-subject">วิชา</label><input type="text" id="f-subject" list="subjects" placeholder="เช่น คณิต"></div>
+          <div><label for="f-due">กำหนดส่ง</label><input type="date" id="f-due"></div>
+        </div>
+        <datalist id="subjects"><option>คณิต</option><option>ภาษาไทย</option><option>อังกฤษ</option><option>วิทย์</option><option>สังคม</option></datalist>
+        <label for="f-title">ชื่องาน</label>
+        <input type="text" id="f-title" placeholder="เช่น แบบฝึกหัดหน้า 25">
+        <label class="check"><input type="checkbox" id="f-now" checked> ให้บอทประกาศในกลุ่มทันทีที่บันทึก</label>
+        <div class="actions"><button class="btn primary" id="add">บันทึกการบ้าน</button></div>
+      </div>
+      <h2>ยังไม่ส่ง</h2><div id="list"></div>
+      <h2 style="margin-top:24px">ส่งแล้ว</h2><div id="done"></div>
+    </section>
+
+    <section id="p-set" hidden>
+      <div class="panel">
+        <h2>บอทแจ้งเตือนในกลุ่มเมื่อ</h2>
+        <div id="days"></div>
+        <label for="s-hour">ส่งแจ้งเตือนเวลา</label>
+        <select id="s-hour"></select>
+        <p class="hint">บอทส่งวันละครั้ง ภายใน 3 ชั่วโมงหลังเวลานี้ (เวลาประเทศไทย) และการตั้งค่านี้ใช้ร่วมกับเมนู "ตั้งแจ้งเตือน" ในไลน์</p>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="save">บันทึกการตั้งค่า</button>
+        <button class="btn" id="test">ให้บอทส่งแจ้งเตือนเข้ากลุ่มตอนนี้</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const DAYS = [[0,'วันส่ง'],[1,'ก่อนส่ง 1 วัน'],[2,'ก่อนส่ง 2 วัน'],[3,'ก่อนส่ง 3 วัน']];
+let gid = localStorage.getItem('hwgid') || '';
+let pw = localStorage.getItem('hwpw') || '';
+let D = { homework: [], settings: { days: [], hour: 18 }, today: '' };
+
+function toast(msg, err){
+  const t = document.createElement('div');
+  t.className = 'toast' + (err ? ' err' : ''); t.textContent = msg; t.setAttribute('role','status');
+  document.body.appendChild(t); setTimeout(() => t.remove(), 2800);
+}
+async function api(method, url, body){
+  const r = await fetch('/web/api' + url, { method, headers: {'Content-Type':'application/json','x-password':pw}, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401){
+    pw = prompt('ใส่รหัสผ่านเพื่อเข้าใช้งาน') || '';
+    localStorage.setItem('hwpw', pw);
+    return api(method, url, body);
+  }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'เกิดข้อผิดพลาด');
+  return j;
+}
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (d) => new Date(d + 'T00:00:00Z').toLocaleDateString('th-TH', {weekday:'short',day:'numeric',month:'short',timeZone:'UTC'});
+const daysLeft = (due) => Math.round((Date.parse(due) - Date.parse(D.today)) / 864e5);
+const leftText = (d) => d < 0 ? `เลยกำหนด ${-d} วัน` : d === 0 ? 'ส่งวันนี้!' : `อีก ${d} วัน`;
+
+function card(h){
+  const d = daysLeft(h.due);
+  const cls = h.done ? 'done' : d < 0 ? 'late' : d <= 1 ? 'soon' : '';
+  return `<article class="hw ${cls}">
+    <div class="top"><span class="subj">${esc(h.subject)}</span>${h.done ? '' : `<span class="badge">${leftText(d)}</span>`}</div>
+    <div class="title">${esc(h.title)}</div>
+    <div class="meta"><span class="hint">ส่ง ${fmt(h.due)}</span>
+      <span><button class="btn small" data-act="toggle" data-id="${h.id}">${h.done ? 'ยังไม่ส่ง' : 'ส่งแล้ว'}</button>
+      <button class="btn small danger" data-act="del" data-id="${h.id}">ลบ</button></span></div>
+  </article>`;
+}
+function render(){
+  const by = (a,b) => a.due.localeCompare(b.due);
+  const pend = D.homework.filter(h => !h.done).sort(by);
+  const done = D.homework.filter(h => h.done).sort(by).reverse();
+  $('#list').innerHTML = pend.length ? pend.map(card).join('') : '<p class="empty">ไม่มีการบ้านค้าง เพิ่มงานใหม่ได้ที่ฟอร์มด้านบน</p>';
+  $('#done').innerHTML = done.length ? done.map(card).join('') : '<p class="empty">ยังไม่มีงานที่ส่งแล้ว</p>';
+  $('#days').innerHTML = DAYS.map(([d,l]) => `<label class="check"><input type="checkbox" value="${d}" ${D.settings.days.includes(d) ? 'checked' : ''}> ${l}</label>`).join('');
+  $('#s-hour').innerHTML = Array.from({length:16}, (_,i) => i + 6).map(h => `<option value="${h}" ${D.settings.hour === h ? 'selected' : ''}>${String(h).padStart(2,'0')}:00 น.</option>`).join('');
+}
+async function refresh(){
+  try { D = await api('GET', '/groups/' + encodeURIComponent(gid)); render(); }
+  catch(e){ toast(e.message, true); }
+}
+async function init(){
+  try {
+    const gs = await api('GET', '/groups');
+    $('#no-grp').hidden = gs.length > 0;
+    $('#app').hidden = gs.length === 0;
+    if (!gs.length) return;
+    if (!gs.some(g => g.id === gid)) gid = gs[0].id;
+    $('#grp').innerHTML = gs.map(g => `<option value="${esc(g.id)}" ${g.id === gid ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
+    $('#grp-wrap').hidden = gs.length < 2;
+    await refresh();
+  } catch(e){ toast(e.message, true); }
+}
+$('#grp').onchange = (e) => { gid = e.target.value; localStorage.setItem('hwgid', gid); refresh(); };
+
+function tab(w){
+  $('#p-hw').hidden = w !== 'hw'; $('#p-set').hidden = w !== 'set';
+  $('#t-hw').setAttribute('aria-selected', w === 'hw'); $('#t-set').setAttribute('aria-selected', w === 'set');
+}
+$('#t-hw').onclick = () => tab('hw'); $('#t-set').onclick = () => tab('set');
+
+$('#add').onclick = async (ev) => {
+  const subject = $('#f-subject').value.trim(), title = $('#f-title').value.trim(), due = $('#f-due').value;
+  if (!subject || !title || !due) return toast('กรอกวิชา ชื่องาน และกำหนดส่งให้ครบ', true);
+  ev.target.disabled = true;
+  try {
+    const r = await api('POST', `/groups/${encodeURIComponent(gid)}/homework`, { subject, title, due, notifyNow: $('#f-now').checked });
+    ['#f-subject','#f-title','#f-due'].forEach(i => $(i).value = '');
+    toast(r.notified ? 'บันทึกแล้ว และบอทประกาศในกลุ่มแล้ว' : $('#f-now').checked ? 'บันทึกแล้ว แต่บอทส่งเข้ากลุ่มไม่ได้' : 'บันทึกการบ้านแล้ว', $('#f-now').checked && !r.notified);
+    await refresh();
+  } catch(e){ toast(e.message, true); }
+  ev.target.disabled = false;
+};
+
+document.addEventListener('click', async (ev) => {
+  const b = ev.target.closest('[data-act]'); if (!b) return;
+  const h = D.homework.find(x => x.id === b.dataset.id); if (!h) return;
+  const base = `/groups/${encodeURIComponent(gid)}/homework/${h.id}`;
+  try {
+    if (b.dataset.act === 'toggle') await api('PUT', base, { done: !h.done });
+    else if (confirm(`ลบ "${h.title}" ?`)) await api('DELETE', base);
+    else return;
+    await refresh();
+  } catch(e){ toast(e.message, true); }
+});
+
+const readSettings = () => ({
+  days: [...document.querySelectorAll('#days input:checked')].map(i => +i.value),
+  hour: +$('#s-hour').value,
+});
+$('#save').onclick = async () => {
+  try { await api('PUT', `/groups/${encodeURIComponent(gid)}/settings`, readSettings()); toast('บันทึกการตั้งค่าแล้ว'); await refresh(); }
+  catch(e){ toast(e.message, true); }
+};
+$('#test').onclick = async (ev) => {
+  ev.target.disabled = true;
+  try {
+    await api('PUT', `/groups/${encodeURIComponent(gid)}/settings`, readSettings());
+    await api('POST', `/groups/${encodeURIComponent(gid)}/remind`);
+    toast('บอทส่งแจ้งเตือนแล้ว ดูในกลุ่มได้เลย');
+  } catch(e){ toast(e.message, true); }
+  ev.target.disabled = false;
+};
+
+init();
+</script>
+</body>
+</html>
