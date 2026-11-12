@@ -70,95 +70,11 @@ const fmt = (d) =>
     weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
   });
 const leftText = (d) => (d < 0 ? `เลยกำหนด ${-d} วัน` : d === 0 ? 'ส่งวันนี้!' : `อีก ${d} วัน`);
-const leftColor = (d) => (d <= 0 ? '#E53935' : d <= 1 ? '#F57C00' : '#2E7D32');
 
 /* ---------------- ตัวช่วยสร้างข้อความ ---------------- */
-const text = (t, quick) => ({
-  type: 'text', text: t,
-  ...(quick && {
-    quickReply: {
-      items: quick.map((q) => ({
-        type: 'action', action: { type: 'message', label: q, text: q },
-      })),
-    },
-  }),
-});
-const btn = (label, data, style = 'secondary') => ({
-  type: 'button', style, height: 'sm', action: { type: 'postback', label, data },
-});
-const flex = (altText, body) => ({
-  type: 'flex', altText,
-  contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', spacing: 'md', contents: body } },
-});
+const text = (t) => ({ type: 'text', text: t });
 const reply = (e, messages) => client.replyMessage({ replyToken: e.replyToken, messages });
-
-/* ---------------- เมนูต่าง ๆ ---------------- */
-const mainMenu = () =>
-  flex('เมนูการบ้าน', [
-    { type: 'text', text: '📚 เมนูการบ้าน', weight: 'bold', size: 'xl' },
-    { type: 'text', text: 'เลือกสิ่งที่ต้องการทำ', size: 'sm', color: '#888888' },
-    btn('➕ เพิ่มการบ้าน', 'action=add', 'primary'),
-    btn('📋 การบ้านที่ค้าง', 'action=list'),
-    btn('⏰ ตั้งแจ้งเตือน', 'action=remind'),
-  ]);
-
-const dueCard = () =>
-  flex('เลือกวันส่ง', [
-    { type: 'text', text: '📅 กำหนดส่งวันไหน?', weight: 'bold', size: 'lg' },
-    {
-      type: 'button', style: 'primary', height: 'sm',
-      action: {
-        type: 'datetimepicker', label: 'เลือกวันที่ส่ง', data: 'action=due',
-        mode: 'date', initial: today(), min: today(),
-      },
-    },
-    btn('ยกเลิก', 'action=cancel'),
-  ]);
-
-function hwRow(h) {
-  const d = daysLeft(h.due);
-  return {
-    type: 'box', layout: 'vertical', spacing: 'sm', margin: 'lg',
-    contents: [
-      { type: 'text', text: h.subject, weight: 'bold', wrap: true },
-      { type: 'text', text: h.title, wrap: true, size: 'sm' },
-      { type: 'text', text: `ส่ง ${fmt(h.due)} · ${leftText(d)}`, size: 'xs', color: leftColor(d) },
-      btn('✅ ส่งแล้ว / ลบ', `action=done&id=${h.id}`),
-      { type: 'separator', margin: 'md' },
-    ],
-  };
-}
-
-function listMessage(g) {
-  const items = g.homework.filter((h) => !h.done).sort((a, b) => a.due.localeCompare(b.due));
-  if (!items.length) return text('ไม่มีการบ้านค้างเลย 🎉');
-  return flex('การบ้านที่ค้าง', [
-    { type: 'text', text: `📋 การบ้านที่ค้าง (${items.length})`, weight: 'bold', size: 'lg' },
-    ...items.slice(0, 8).map(hwRow),
-    ...(items.length > 8 ? [{ type: 'text', text: `...และอีก ${items.length - 8} รายการ`, size: 'xs', color: '#888888' }] : []),
-  ]);
-}
-
-function remindMenu(g) {
-  const s = g.settings;
-  const dayOpts = [[0, 'วันส่ง'], [1, 'ก่อน 1 วัน'], [2, 'ก่อน 2 วัน'], [3, 'ก่อน 3 วัน']];
-  const hours = [7, 12, 18, 20];
-  return flex('ตั้งแจ้งเตือน', [
-    { type: 'text', text: '⏰ ตั้งแจ้งเตือนการบ้าน', weight: 'bold', size: 'lg' },
-    { type: 'text', text: 'แจ้งเตือนเมื่อ (เลือกได้หลายข้อ)', size: 'sm', color: '#888888' },
-    ...dayOpts.map(([d, l]) => btn(`${s.days.includes(d) ? '✅' : '⬜'} ${l}`, `action=toggleDay&d=${d}`)),
-    { type: 'text', text: 'ส่งแจ้งเตือนเวลา', size: 'sm', color: '#888888', margin: 'lg' },
-    ...hours.map((h) => btn(`${s.hour === h ? '🔘' : '⚪'} ${String(h).padStart(2, '0')}:00 น.`, `action=setHour&h=${h}`)),
-    btn('🔔 ทดสอบแจ้งเตือนตอนนี้', 'action=testRemind', 'primary'),
-    btn('ปิด', 'action=cancel'),
-  ]);
-}
-
-/* ---------------- สถานะการเพิ่มการบ้าน (จำแยกตามคน) ---------------- */
-const sessions = new Map(); // key = groupId:userId
-const SESSION_MS = 10 * 60 * 1000;
-const SUBJECTS = ['คณิต', 'ภาษาไทย', 'อังกฤษ', 'วิทย์', 'สังคม'];
-const TRIGGERS = ['เมนู', 'การบ้าน', 'menu', 'hw', '/menu'];
+const TRIGGERS = ['การบ้าน', 'hw', '/hw'];
 
 /* ---------------- สร้างข้อความแจ้งเตือน ---------------- */
 function reminderText(g) {
@@ -167,94 +83,26 @@ function reminderText(g) {
     .sort((a, b) => a.due.localeCompare(b.due));
   if (!due.length) return null;
   const lines = due.map((h) => `• ${h.subject}: ${h.title}\n  ส่ง ${fmt(h.due)} (${leftText(daysLeft(h.due))})`);
-  return `⏰ แจ้งเตือนการบ้าน\n\n${lines.join('\n')}\n\nพิมพ์ "เมนู" เพื่อดูหรือลบรายการ`;
+  return `⏰ แจ้งเตือนการบ้าน\n\n${lines.join('\n')}\n\nพิมพ์ "การบ้าน" เพื่อดูรายการที่ค้าง`;
 }
 
-/* ---------------- จัดการ event ---------------- */
+/* ---------------- จัดการ event ----------------
+   การเพิ่มการบ้าน/ตั้งแจ้งเตือนทำในเว็บ (/web) แล้ว
+   บอทแค่จำกลุ่มจากทุก event, แจ้งเตือนอัตโนมัติ และตอบรายการค้างเมื่อพิมพ์ "การบ้าน" */
 async function handleEvent(e) {
   const gid = e.source.groupId || e.source.roomId || e.source.userId;
-  const uid = e.source.userId;
-  const g = getGroup(gid);
-  const key = `${gid}:${uid}`;
+  const g = getGroup(gid); // จำกลุ่มไว้ให้เว็บเลือก
 
   if (e.type === 'join' || e.type === 'follow') {
-    return reply(e, [text('สวัสดี! เป็นบอทช่วยจดการบ้านนะ พิมพ์ "เมนู" เพื่อเริ่มใช้งานได้เลย'), mainMenu()]);
+    return reply(e, [text('สวัสดี! บอทนี้จะคอยแจ้งเตือนการบ้านในกลุ่มนะ พิมพ์ "การบ้าน" เพื่อดูรายการที่ยังไม่ส่ง')]);
   }
 
   if (e.type === 'message' && e.message.type === 'text') {
-    const t = e.message.text.trim();
-    if (TRIGGERS.includes(t.toLowerCase())) {
-      sessions.delete(key);
-      return reply(e, [mainMenu()]);
-    }
-    const s = sessions.get(key);
-    if (!s) return; // ไม่เกี่ยวกับบอท ไม่ต้องตอบ
-    if (Date.now() - s.at > SESSION_MS) { sessions.delete(key); return; }
-    if (t === 'ยกเลิก') { sessions.delete(key); return reply(e, [text('ยกเลิกแล้ว')]); }
-
-    if (s.step === 'subject') {
-      s.subject = t.slice(0, 30); s.step = 'title'; s.at = Date.now();
-      return reply(e, [text(`วิชา "${s.subject}" ✔️\nการบ้านคืออะไร? (เช่น แบบฝึกหัดหน้า 25)`)]);
-    }
-    if (s.step === 'title') {
-      s.title = t.slice(0, 100); s.step = 'due'; s.at = Date.now();
-      return reply(e, [dueCard()]);
-    }
-    return;
-  }
-
-  if (e.type === 'postback') {
-    const p = new URLSearchParams(e.postback.data);
-    const action = p.get('action');
-
-    if (action === 'add') {
-      sessions.set(key, { step: 'subject', at: Date.now() });
-      return reply(e, [text('วิชาอะไร? กดเลือกหรือพิมพ์ชื่อวิชาเองได้เลย\n(พิมพ์ "ยกเลิก" เพื่อยกเลิก)', SUBJECTS)]);
-    }
-
-    if (action === 'due') {
-      const s = sessions.get(key);
-      if (!s || s.step !== 'due' || Date.now() - s.at > SESSION_MS) {
-        return reply(e, [text('หมดเวลาแล้ว หรือไม่ใช่รายการของคุณ ลองกด "เพิ่มการบ้าน" ใหม่นะ')]);
-      }
-      const due = e.postback.params.date;
-      g.homework.push({
-        id: Date.now().toString(36), subject: s.subject, title: s.title, due, done: false, addedBy: uid,
-      });
-      save(); sessions.delete(key);
-      const d = daysLeft(due);
-      return reply(e, [text(`✅ บันทึกการบ้านแล้ว\n📖 ${s.subject}: ${s.title}\n📅 ส่ง ${fmt(due)} (${leftText(d)})`)]);
-    }
-
-    if (action === 'cancel') { sessions.delete(key); return reply(e, [text('ยกเลิกแล้ว')]); }
-    if (action === 'list') return reply(e, [listMessage(g)]);
-    if (action === 'remind') return reply(e, [remindMenu(g)]);
-
-    if (action === 'done') {
-      const h = g.homework.find((x) => x.id === p.get('id'));
-      if (h) { h.done = true; save(); }
-      return reply(e, [text(h ? `✅ ลบ "${h.subject}: ${h.title}" แล้ว` : 'ไม่พบรายการนี้แล้ว'), listMessage(g)]);
-    }
-
-    if (action === 'testRemind') {
-      const msg = reminderText(g);
-      return reply(e, [text(msg || 'ตอนนี้ยังไม่มีการบ้านที่ตรงกับเงื่อนไขแจ้งเตือน (ลองเพิ่มการบ้านที่ส่งวันนี้หรือพรุ่งนี้ดู)')]);
-    }
-
-    if (action === 'toggleDay') {
-      const d = Number(p.get('d'));
-      const days = g.settings.days;
-      g.settings.days = days.includes(d) ? days.filter((x) => x !== d) : [...days, d].sort();
-      save();
-      return reply(e, [remindMenu(g)]);
-    }
-
-    if (action === 'setHour') {
-      g.settings.hour = Number(p.get('h'));
-      g.lastSent = '';
-      save();
-      return reply(e, [remindMenu(g)]);
-    }
+    if (!TRIGGERS.includes(e.message.text.trim().toLowerCase())) return;
+    const items = g.homework.filter((h) => !h.done).sort((a, b) => a.due.localeCompare(b.due));
+    if (!items.length) return reply(e, [text('ไม่มีการบ้านค้างเลย 🎉')]);
+    const lines = items.slice(0, 15).map((h, i) => `${i + 1}. ${h.subject}: ${h.title}\n   ส่ง ${fmt(h.due)} (${leftText(daysLeft(h.due))})`);
+    return reply(e, [text(`📋 การบ้านที่ค้าง (${items.length})\n\n${lines.join('\n')}`)]);
   }
 }
 
