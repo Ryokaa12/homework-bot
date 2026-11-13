@@ -89,6 +89,36 @@ function reminderText(g) {
 /* ---------------- จัดการ event ----------------
    การเพิ่มการบ้าน/ตั้งแจ้งเตือนทำในเว็บ (/web) แล้ว
    บอทแค่จำกลุ่มจากทุก event, แจ้งเตือนอัตโนมัติ และตอบรายการค้างเมื่อพิมพ์ "การบ้าน" */
+const USE_PUSH = process.env.USE_PUSH === '1'; // ตั้ง USE_PUSH=1 ถ้าอยากใช้ push (กินโควตา LINE)
+
+function enqueue(g, t) {
+  g.queue = g.queue || [];
+  g.queue.push(t);
+  if (g.queue.length > 10) g.queue.shift();
+  save();
+}
+// ส่งข้อความเข้ากลุ่ม: ถ้าไม่เปิด push (หรือ push ไม่สำเร็จ) จะเข้าคิว แล้วบอทตอบกลับให้ตอนมีคนพิมพ์ในกลุ่ม (reply ไม่กินโควตา)
+async function deliver(gid, g, t) {
+  if (USE_PUSH) {
+    try { await client.pushMessage({ to: gid, messages: [text(t)] }); return 'pushed'; }
+    catch (err) { console.error('push failed → queue', gid, err.message); }
+  }
+  enqueue(g, t);
+  return 'queued';
+}
+
+function listText(g) {
+  const items = g.homework.filter((h) => !h.done).sort((a, b) => a.due.localeCompare(b.due));
+  if (!items.length) return 'ไม่มีการบ้านค้างเลย 🎉';
+  const lines = items.slice(0, 15).map((h, i) => `${i + 1}. ${h.subject}: ${h.title}\n   ส่ง ${fmt(h.due)} (${leftText(daysLeft(h.due))})`);
+  return `📋 การบ้านที่ค้าง (${items.length})\n\n${lines.join('\n')}`;
+}
+
+/* ---------------- จัดการ event ----------------
+   เพิ่มการบ้าน/ตั้งแจ้งเตือนทำในเว็บ (/web)
+   บอทแจ้งเตือนด้วยการ "ตอบกลับ" ตอนมีคนพิมพ์ในกลุ่ม (ไม่กินโควตา push):
+   - ข้อความแรกของวัน หลังถึงเวลาที่ตั้ง → แนบแจ้งเตือนการบ้านให้
+   - ประกาศ/แจ้งเตือนที่สั่งจากเว็บ → รอในคิว แล้วส่งตอนมีคนพิมพ์ครั้งถัดไป */
 async function handleEvent(e) {
   const gid = e.source.groupId || e.source.roomId || e.source.userId;
   if (e.type === 'leave') { delete db.groups[gid]; save(); return; } // บอทถูกเตะออก → เอากลุ่มออกจากรายการ
@@ -97,38 +127,42 @@ async function handleEvent(e) {
   if (e.type === 'join' || e.type === 'follow') {
     return reply(e, [text('สวัสดี! บอทนี้จะคอยแจ้งเตือนการบ้านในกลุ่มนะ พิมพ์ "การบ้าน" เพื่อดูรายการที่ยังไม่ส่ง')]);
   }
+  if (e.type !== 'message') return;
 
-  if (e.type === 'message' && e.message.type === 'text') {
-    if (!TRIGGERS.includes(e.message.text.trim().toLowerCase())) return;
-    const items = g.homework.filter((h) => !h.done).sort((a, b) => a.due.localeCompare(b.due));
-    if (!items.length) return reply(e, [text('ไม่มีการบ้านค้างเลย 🎉')]);
-    const lines = items.slice(0, 15).map((h, i) => `${i + 1}. ${h.subject}: ${h.title}\n   ส่ง ${fmt(h.due)} (${leftText(daysLeft(h.due))})`);
-    return reply(e, [text(`📋 การบ้านที่ค้าง (${items.length})\n\n${lines.join('\n')}`)]);
+  const out = [];
+  if (e.message.type === 'text' && TRIGGERS.includes(e.message.text.trim().toLowerCase())) out.push(text(listText(g)));
+
+  let dirty = false;
+  while (g.queue && g.queue.length && out.length < 5) { out.push(text(g.queue.shift())); dirty = true; }
+
+  if (g.lastSent !== today() && bkk().getUTCHours() >= g.settings.hour && out.length < 5) {
+    g.lastSent = today(); dirty = true;
+    g.homework = g.homework.filter((h) => daysLeft(h.due) >= -7);
+    const m = reminderText(g);
+    if (m) out.push(text(m));
   }
+
+  if (dirty) save();
+  if (out.length) return reply(e, out);
 }
 
-/* ---------------- ส่งแจ้งเตือนอัตโนมัติ ----------------
-   ส่งวันละครั้งต่อกลุ่ม ภายใน 3 ชั่วโมงหลังเวลาที่ตั้ง
-   (กันพลาดกรณีเซิร์ฟเวอร์เพิ่งตื่นหรือรีสตาร์ทตอนใกล้เวลา) */
+/* ---------------- งานเบื้องหลัง ----------------
+   ลบการบ้านที่เลยกำหนดเกิน 7 วัน
+   ถ้าเปิด USE_PUSH=1 จะส่งแจ้งเตือนรายวันแบบ push ด้วย (ภายใน 3 ชั่วโมงหลังเวลาที่ตั้ง) */
 cron.schedule('* * * * *', async () => {
   const hour = bkk().getUTCHours();
 
   for (const [gid, g] of Object.entries(db.groups)) {
+    const before = g.homework.length;
+    g.homework = g.homework.filter((h) => daysLeft(h.due) >= -7);
+    if (g.homework.length !== before) save();
+
+    if (!USE_PUSH) continue;
     if (hour < g.settings.hour || hour >= g.settings.hour + 3) continue;
     if (g.lastSent === today()) continue;
-    g.lastSent = today();
-
-    // ลบการบ้านที่เลยกำหนดเกิน 7 วัน
-    g.homework = g.homework.filter((h) => daysLeft(h.due) >= -7);
-    save();
-
+    g.lastSent = today(); save();
     const msg = reminderText(g);
-    if (!msg) continue;
-    try {
-      await client.pushMessage({ to: gid, messages: [text(msg)] });
-    } catch (err) {
-      console.error('push failed', gid, err.message);
-    }
+    if (msg) await deliver(gid, g, msg);
   }
 }, { timezone: 'Asia/Bangkok' });
 
@@ -174,7 +208,7 @@ function mountWeb(app) {
   r.get('/api/groups', wrap(async (_, res) => {
     const out = [];
     for (const [id, g] of Object.entries(db.groups)) {
-      out.push({ id, name: await groupName(id, g), pending: g.homework.filter((h) => !h.done).length });
+      out.push({ id, name: await groupName(id, g), pending: g.homework.filter((h) => !h.done).length, queued: (g.queue || []).length });
     }
     res.json(out);
   }));
@@ -222,15 +256,13 @@ function mountWeb(app) {
       due, done: false, addedBy: 'web',
     };
     g.homework.push(h); save();
-    let notified = false, notifyError = '';
+    let notified = false, queued = false;
     if (notifyNow) {
-      try {
-        await pushText(req.params.gid,
-          `🆕 มีการบ้านใหม่\n📖 ${h.subject}: ${h.title}\n📅 ส่ง ${fmt(h.due)} (${leftText(daysLeft(h.due))})\n\nอย่าลืมส่งในกลุ่มนะทุกคน 🙌`);
-        notified = true;
-      } catch (e) { console.error('push new hw', errText(e)); notifyError = errText(e); }
+      const how = await deliver(req.params.gid, g,
+        `🆕 มีการบ้านใหม่\n📖 ${h.subject}: ${h.title}\n📅 ส่ง ${fmt(h.due)} (${leftText(daysLeft(h.due))})\n\nอย่าลืมส่งในกลุ่มนะทุกคน 🙌`);
+      notified = how === 'pushed'; queued = how === 'queued';
     }
-    res.json({ ok: true, notified, notifyError });
+    res.json({ ok: true, notified, queued });
   }));
 
   r.put('/api/groups/:gid/homework/:id', wrap(async (req, res) => {
@@ -264,8 +296,8 @@ function mountWeb(app) {
   r.post('/api/groups/:gid/remind', wrap(async (req, res) => {
     const g = grp(req, res); if (!g) return;
     const msg = reminderText(g) || '🔔 ทดสอบแจ้งเตือนจากเว็บ — ตอนนี้ยังไม่มีการบ้านที่ตรงกับเงื่อนไขแจ้งเตือน';
-    try { await pushText(req.params.gid, msg); res.json({ ok: true }); }
-    catch (e) { console.error('remind push', errText(e)); res.status(400).json({ error: 'LINE ตอบกลับ: ' + errText(e) }); }
+    const how = await deliver(req.params.gid, g, msg);
+    res.json({ ok: true, queued: how === 'queued' });
   }));
 
   app.use('/web', r);

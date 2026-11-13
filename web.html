@@ -82,7 +82,7 @@ input[type=text],input[type=date],select{width:100%;font:inherit;color:var(--ink
         <label for="f-title">ชื่องาน</label>
         <input type="text" id="f-title" placeholder="เช่น แบบฝึกหัดหน้า 25">
         <div class="tg-box"></div>
-        <label class="check"><input type="checkbox" id="f-now" checked> ให้บอทประกาศในกลุ่มทันทีที่บันทึก</label>
+        <label class="check"><input type="checkbox" id="f-now" checked> ให้บอทประกาศในกลุ่มที่ติ๊ก</label>
         <div class="actions"><button class="btn primary" id="add">บันทึกการบ้าน</button></div>
       </div>
       <h2>ยังไม่ส่ง</h2><div id="list"></div>
@@ -96,13 +96,13 @@ input[type=text],input[type=date],select{width:100%;font:inherit;color:var(--ink
         <div id="days"></div>
         <label for="s-hour">ส่งแจ้งเตือนเวลา</label>
         <select id="s-hour"></select>
-        <p class="hint">บอทส่งวันละครั้ง ภายใน 3 ชั่วโมงหลังเวลานี้ (เวลาประเทศไทย) </p>
+        <p class="hint">บอทแจ้งเตือนวันละครั้ง เมื่อมีคนพิมพ์ในกลุ่มเป็นคนแรกหลังเวลานี้ (เวลาประเทศไทย) โดยใช้การตอบกลับ จึงไม่กินโควตาข้อความ LINE </p>
       </div>
       <div class="tg-box"></div>
       <p class="hint">ค่าที่ตั้งด้านบนจะบันทึกให้ทุกกลุ่มที่ติ๊กไว้ (ช่องด้านบนแสดงค่าของกลุ่มที่เลือกดูอยู่)</p>
       <div class="actions">
         <button class="btn primary" id="save">บันทึกการตั้งค่า</button>
-        <button class="btn" id="test">ให้บอทส่งแจ้งเตือนเข้ากลุ่มตอนนี้</button>
+        <button class="btn" id="test">สั่งให้บอทแจ้งเตือนกลุ่มที่ติ๊ก</button>
       </div>
     </section>
   </div>
@@ -183,7 +183,7 @@ async function init(){
     targets = new Set([...targets].filter(id => gs.some(g => g.id === id)));
     if (!targets.size) targets.add(gid);
     renderTargets();
-    $('#grp').innerHTML = gs.map(g => `<option value="${esc(g.id)}" ${g.id === gid ? 'selected' : ''}>${esc(g.name)} (ค้าง ${g.pending})</option>`).join('');
+    $('#grp').innerHTML = gs.map(g => `<option value="${esc(g.id)}" ${g.id === gid ? 'selected' : ''}>${esc(g.name)} (ค้าง ${g.pending}${g.queued ? ' · รอส่ง ' + g.queued : ''})</option>`).join('');
     $('#grp-wrap').hidden = false;
     $('#grp-count').textContent = gs.length;
     await refresh();
@@ -232,9 +232,9 @@ $('#add').onclick = async (ev) => {
   const ok = rs.filter(r => r.status === 'fulfilled');
   const sent = ok.filter(r => r.value.notified).length;
   if (ok.length) ['#f-subject','#f-title','#f-due'].forEach(i => $(i).value = '');
-  const bad = ok.length < ids.length || (now && sent < ok.length);
-  const why = (ok.find(r => r.value.notifyError) || {}).value;
-  toast(`บันทึก ${ok.length}/${ids.length} กลุ่ม` + (now ? ` · บอทประกาศสำเร็จ ${sent} กลุ่ม` : '') + (why ? ` — LINE: ${why.notifyError}` : ''), bad);
+  const q = ok.filter(r => r.value.queued).length;
+  const bad = ok.length < ids.length;
+  toast(`บันทึก ${ok.length}/${ids.length} กลุ่ม` + (now ? (sent ? ` · บอทประกาศแล้ว ${sent} กลุ่ม` : '') + (q ? ` · ${q} กลุ่มรอบอทประกาศตอนมีคนพิมพ์ในกลุ่มครั้งถัดไป` : '') : ''), bad);
   await init();
   ev.target.disabled = false;
 };
@@ -268,9 +268,11 @@ $('#test').onclick = async (ev) => {
   ev.target.disabled = true;
   await saveAll(ids);
   const rs = await Promise.allSettled(ids.map(id => api('POST', `/groups/${encodeURIComponent(id)}/remind`)));
-  const n = rs.filter(r => r.status === 'fulfilled').length;
+  const okr = rs.filter(r => r.status === 'fulfilled');
   const why = (rs.find(r => r.status === 'rejected') || {}).reason;
-  toast(n < ids.length ? `ส่งไม่สำเร็จ ${ids.length - n} กลุ่ม — ${why ? why.message : ''}` : `บอทส่งแจ้งเตือนแล้ว ${n}/${ids.length} กลุ่ม`, n < ids.length);
+  const q = okr.filter(r => r.value.queued).length;
+  toast(okr.length < ids.length ? `ไม่สำเร็จ ${ids.length - okr.length} กลุ่ม — ${why ? why.message : ''}`
+    : q ? `จัดคิวแล้ว ${q} กลุ่ม บอทจะส่งตอนมีคนพิมพ์ในกลุ่มครั้งถัดไป` : `บอทส่งแจ้งเตือนแล้ว ${okr.length} กลุ่ม`, okr.length < ids.length);
   ev.target.disabled = false;
 };
 
