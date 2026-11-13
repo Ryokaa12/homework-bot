@@ -90,6 +90,7 @@ input[type=text],input[type=date],select{width:100%;font:inherit;color:var(--ink
     </section>
 
     <section id="p-set" hidden>
+      <div class="panel" id="quota">กำลังเช็กโควตาข้อความของ LINE…</div>
       <div class="panel">
         <h2>บอทแจ้งเตือนในกลุ่มเมื่อ</h2>
         <div id="days"></div>
@@ -157,6 +158,15 @@ function render(){
   $('#days').innerHTML = DAYS.map(([d,l]) => `<label class="check"><input type="checkbox" value="${d}" ${D.settings.days.includes(d) ? 'checked' : ''}> ${l}</label>`).join('');
   $('#s-hour').innerHTML = Array.from({length:16}, (_,i) => i + 6).map(h => `<option value="${h}" ${D.settings.hour === h ? 'selected' : ''}>${String(h).padStart(2,'0')}:00 น.</option>`).join('');
 }
+async function loadQuota(){
+  try {
+    const q = await api('GET', '/quota');
+    const full = q.type === 'limited' && q.used >= q.limit;
+    $('#quota').innerHTML = `<h2 style="margin:0 0 6px">โควตาข้อความ LINE เดือนนี้</h2>` +
+      `<strong style="color:var(--${full ? 'red' : 'green-d'})">ใช้ไป ${q.used}${q.type === 'limited' ? ' / ' + q.limit : ''} ข้อความ</strong>` +
+      `<p class="hint">${full ? 'เต็มแล้ว บอทส่งแจ้งเตือนเองไม่ได้จนกว่าจะขึ้นเดือนใหม่' : 'นับตามจำนวนคนที่ได้รับ (กลุ่ม 40 คน = 40 ข้อความ ต่อ 1 ครั้งที่ส่ง)'}</p>`;
+  } catch(e){ $('#quota').textContent = 'เช็กโควตาไม่ได้: ' + e.message; }
+}
 async function refresh(){
   try { D = await api('GET', '/groups/' + encodeURIComponent(gid)); render(); }
   catch(e){ toast(e.message, true); }
@@ -209,7 +219,7 @@ function tab(w){
   $('#p-hw').hidden = w !== 'hw'; $('#p-set').hidden = w !== 'set';
   $('#t-hw').setAttribute('aria-selected', w === 'hw'); $('#t-set').setAttribute('aria-selected', w === 'set');
 }
-$('#t-hw').onclick = () => tab('hw'); $('#t-set').onclick = () => tab('set');
+$('#t-hw').onclick = () => tab('hw'); $('#t-set').onclick = () => { tab('set'); loadQuota(); };
 
 $('#add').onclick = async (ev) => {
   const subject = $('#f-subject').value.trim(), title = $('#f-title').value.trim(), due = $('#f-due').value;

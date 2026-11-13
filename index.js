@@ -179,6 +179,16 @@ function mountWeb(app) {
     res.json(out);
   }));
 
+  // โควตาข้อความเดือนนี้ (ตัวเลขจริงจาก LINE API อัปเดตทันที ไม่ช้าเหมือนหน้า Manager)
+  r.get('/api/quota', wrap(async (_, res) => {
+    const H = { Authorization: `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` };
+    const [q, u] = await Promise.all([
+      fetch('https://api.line.me/v2/bot/message/quota', { headers: H }).then((x) => x.json()),
+      fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers: H }).then((x) => x.json()),
+    ]);
+    res.json({ type: q.type, limit: q.value, used: u.totalUsage });
+  }));
+
   // ลบกลุ่มออกจากระบบ (ติ๊ก leave=1 เพื่อให้บอทออกจากกลุ่มด้วย)
   r.delete('/api/groups/:gid', wrap(async (req, res) => {
     const gid = req.params.gid;
