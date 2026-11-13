@@ -135,6 +135,7 @@ cron.schedule('* * * * *', async () => {
 /* ---------------- เว็บจัดการการบ้าน (/web) ----------------
    ใช้ข้อมูลชุดเดียวกับบอท: เพิ่มการบ้าน/ตั้งแจ้งเตือนในเว็บ → บอทส่งข้อความเข้ากลุ่ม */
 const path = require('path');
+const errText = (e) => [e.status, e.body || e.message].filter(Boolean).join(' ');
 const pushText = (to, t) => client.pushMessage({ to, messages: [text(t)] });
 
 async function groupName(gid, g) {
@@ -211,15 +212,15 @@ function mountWeb(app) {
       due, done: false, addedBy: 'web',
     };
     g.homework.push(h); save();
-    let notified = false;
+    let notified = false, notifyError = '';
     if (notifyNow) {
       try {
         await pushText(req.params.gid,
           `🆕 มีการบ้านใหม่\n📖 ${h.subject}: ${h.title}\n📅 ส่ง ${fmt(h.due)} (${leftText(daysLeft(h.due))})\n\nอย่าลืมส่งในกลุ่มนะทุกคน 🙌`);
         notified = true;
-      } catch (e) { console.error('push new hw', e.message); }
+      } catch (e) { console.error('push new hw', errText(e)); notifyError = errText(e); }
     }
-    res.json({ ok: true, notified });
+    res.json({ ok: true, notified, notifyError });
   }));
 
   r.put('/api/groups/:gid/homework/:id', wrap(async (req, res) => {
@@ -254,7 +255,7 @@ function mountWeb(app) {
     const g = grp(req, res); if (!g) return;
     const msg = reminderText(g) || '🔔 ทดสอบแจ้งเตือนจากเว็บ — ตอนนี้ยังไม่มีการบ้านที่ตรงกับเงื่อนไขแจ้งเตือน';
     try { await pushText(req.params.gid, msg); res.json({ ok: true }); }
-    catch (e) { res.status(400).json({ error: 'บอทส่งเข้ากลุ่มไม่ได้ (' + e.message + ')' }); }
+    catch (e) { console.error('remind push', errText(e)); res.status(400).json({ error: 'LINE ตอบกลับ: ' + errText(e) }); }
   }));
 
   app.use('/web', r);
