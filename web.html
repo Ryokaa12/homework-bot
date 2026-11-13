@@ -25,7 +25,7 @@ nav button[aria-selected=true]{color:var(--ink);border-color:var(--green)}
 label{display:block;font-weight:500;font-size:.92rem;margin:12px 0 4px}
 input[type=text],input[type=date],select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
 .row{display:flex;gap:12px}.row>*{flex:1}
-@media(max-width:480px){.row{flex-direction:column;gap:0}}
+@media(max-width:480px){.row:not(.keep){flex-direction:column;gap:0}}
 .check{display:flex;align-items:center;gap:8px;font-weight:400;margin:8px 0}
 .check input{width:18px;height:18px;accent-color:var(--green)}
 .btn{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:9px 16px;cursor:pointer}
@@ -53,8 +53,12 @@ input[type=text],input[type=date],select{width:100%;font:inherit;color:var(--ink
 <main>
   <h1>การบ้านของห้อง</h1>
   <div id="grp-wrap" class="panel" hidden>
-    <label for="grp" style="margin-top:0">กลุ่มที่จะแจ้งเตือน</label>
-    <select id="grp"></select>
+    <label for="grp" style="margin-top:0">เลือกกลุ่ม (<span id="grp-count">0</span> กลุ่มที่มีบอท)</label>
+    <div class="row keep" style="align-items:center">
+      <select id="grp"></select>
+      <button class="btn small danger" id="grp-del" style="flex:0 0 auto">ลบกลุ่มนี้</button>
+    </div>
+    <p class="hint">การบ้านและการตั้งค่าด้านล่างจะเป็นของกลุ่มที่เลือกเท่านั้น</p>
   </div>
   <p class="empty" id="no-grp" hidden>ยังไม่มีกลุ่ม เชิญบอทเข้ากลุ่ม LINE แล้วพิมพ์ข้อความอะไรก็ได้ในกลุ่มหนึ่งครั้ง จากนั้นรีเฟรชหน้านี้</p>
 
@@ -154,13 +158,26 @@ async function init(){
     const gs = await api('GET', '/groups');
     $('#no-grp').hidden = gs.length > 0;
     $('#app').hidden = gs.length === 0;
+    $('#grp-wrap').hidden = gs.length === 0;
     if (!gs.length) return;
     if (!gs.some(g => g.id === gid)) gid = gs[0].id;
-    $('#grp').innerHTML = gs.map(g => `<option value="${esc(g.id)}" ${g.id === gid ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
-    $('#grp-wrap').hidden = gs.length < 2;
+    $('#grp').innerHTML = gs.map(g => `<option value="${esc(g.id)}" ${g.id === gid ? 'selected' : ''}>${esc(g.name)} (ค้าง ${g.pending})</option>`).join('');
+    $('#grp-wrap').hidden = false;
+    $('#grp-count').textContent = gs.length;
     await refresh();
   } catch(e){ toast(e.message, true); }
 }
+$('#grp-del').onclick = async () => {
+  const name = $('#grp').selectedOptions[0].textContent;
+  if (!confirm(`ลบกลุ่ม "${name}" ออกจากระบบ?\nการบ้านและการตั้งค่าของกลุ่มนี้จะหายทั้งหมด`)) return;
+  const leave = confirm('ให้บอทออกจากกลุ่มนี้ใน LINE ด้วยไหม?\n\nกด OK = ออกจากกลุ่มด้วย\nกด Cancel = ลบแค่ในระบบ (ถ้ายังมีคนพิมพ์ในกลุ่ม กลุ่มจะกลับมาในรายการอีก)');
+  try {
+    const r = await api('DELETE', `/groups/${encodeURIComponent(gid)}${leave ? '?leave=1' : ''}`);
+    toast(leave && !r.left ? 'ลบจากระบบแล้ว แต่บอทออกจากกลุ่มไม่ได้' : 'ลบกลุ่มแล้ว', leave && !r.left);
+    gid = ''; localStorage.removeItem('hwgid');
+    await init();
+  } catch(e){ toast(e.message, true); }
+};
 $('#grp').onchange = (e) => { gid = e.target.value; localStorage.setItem('hwgid', gid); refresh(); };
 
 function tab(w){

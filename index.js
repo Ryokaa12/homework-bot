@@ -91,6 +91,7 @@ function reminderText(g) {
    บอทแค่จำกลุ่มจากทุก event, แจ้งเตือนอัตโนมัติ และตอบรายการค้างเมื่อพิมพ์ "การบ้าน" */
 async function handleEvent(e) {
   const gid = e.source.groupId || e.source.roomId || e.source.userId;
+  if (e.type === 'leave') { delete db.groups[gid]; save(); return; } // บอทถูกเตะออก → เอากลุ่มออกจากรายการ
   const g = getGroup(gid); // จำกลุ่มไว้ให้เว็บเลือก
 
   if (e.type === 'join' || e.type === 'follow') {
@@ -171,8 +172,26 @@ function mountWeb(app) {
 
   r.get('/api/groups', wrap(async (_, res) => {
     const out = [];
-    for (const [id, g] of Object.entries(db.groups)) out.push({ id, name: await groupName(id, g) });
+    for (const [id, g] of Object.entries(db.groups)) {
+      out.push({ id, name: await groupName(id, g), pending: g.homework.filter((h) => !h.done).length });
+    }
     res.json(out);
+  }));
+
+  // ลบกลุ่มออกจากระบบ (ติ๊ก leave=1 เพื่อให้บอทออกจากกลุ่มด้วย)
+  r.delete('/api/groups/:gid', wrap(async (req, res) => {
+    const gid = req.params.gid;
+    if (!db.groups[gid]) return res.status(404).json({ error: 'ไม่พบกลุ่มนี้' });
+    let left = false;
+    if (req.query.leave === '1') {
+      try {
+        if (gid.startsWith('C')) await client.leaveGroup(gid);
+        else if (gid.startsWith('R')) await client.leaveRoom(gid);
+        left = gid[0] === 'C' || gid[0] === 'R';
+      } catch (e) { console.error('leave', e.message); }
+    }
+    delete db.groups[gid]; save();
+    res.json({ ok: true, left });
   }));
 
   r.get('/api/groups/:gid', wrap(async (req, res) => {
