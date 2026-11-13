@@ -45,6 +45,9 @@ input[type=text],input[type=date],select{width:100%;font:inherit;color:var(--ink
 .late .badge{background:color-mix(in srgb,var(--red) 20%,transparent);color:var(--red)}
 .empty{color:var(--muted);text-align:center;padding:24px 8px}
 .hint{color:var(--muted);font-size:.85rem;margin:4px 0 0}
+.tg{border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin:14px 0 4px;background:var(--bg)}
+.tg legend{font-weight:600;font-size:.92rem;padding:0 6px}
+.tg .check{margin:6px 0}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:.92rem;max-width:90vw}
 .toast.err{background:var(--red);color:#fff}
 </style>
@@ -78,6 +81,7 @@ input[type=text],input[type=date],select{width:100%;font:inherit;color:var(--ink
         <datalist id="subjects"><option>คณิต</option><option>ภาษาไทย</option><option>อังกฤษ</option><option>วิทย์</option><option>สังคม</option></datalist>
         <label for="f-title">ชื่องาน</label>
         <input type="text" id="f-title" placeholder="เช่น แบบฝึกหัดหน้า 25">
+        <div class="tg-box"></div>
         <label class="check"><input type="checkbox" id="f-now" checked> ให้บอทประกาศในกลุ่มทันทีที่บันทึก</label>
         <div class="actions"><button class="btn primary" id="add">บันทึกการบ้าน</button></div>
       </div>
@@ -93,6 +97,8 @@ input[type=text],input[type=date],select{width:100%;font:inherit;color:var(--ink
         <select id="s-hour"></select>
         <p class="hint">บอทส่งวันละครั้ง ภายใน 3 ชั่วโมงหลังเวลานี้ (เวลาประเทศไทย) </p>
       </div>
+      <div class="tg-box"></div>
+      <p class="hint">ค่าที่ตั้งด้านบนจะบันทึกให้ทุกกลุ่มที่ติ๊กไว้ (ช่องด้านบนแสดงค่าของกลุ่มที่เลือกดูอยู่)</p>
       <div class="actions">
         <button class="btn primary" id="save">บันทึกการตั้งค่า</button>
         <button class="btn" id="test">ให้บอทส่งแจ้งเตือนเข้ากลุ่มตอนนี้</button>
@@ -106,6 +112,8 @@ const $ = (s) => document.querySelector(s);
 const DAYS = [[0,'วันส่ง'],[1,'ก่อนส่ง 1 วัน'],[2,'ก่อนส่ง 2 วัน'],[3,'ก่อนส่ง 3 วัน']];
 let gid = localStorage.getItem('hwgid') || '';
 let pw = localStorage.getItem('hwpw') || '';
+let GS = [];
+let targets = new Set(JSON.parse(localStorage.getItem('hwtg') || '[]'));
 let D = { homework: [], settings: { days: [], hour: 18 }, today: '' };
 
 function toast(msg, err){
@@ -160,7 +168,11 @@ async function init(){
     $('#app').hidden = gs.length === 0;
     $('#grp-wrap').hidden = gs.length === 0;
     if (!gs.length) return;
+    GS = gs;
     if (!gs.some(g => g.id === gid)) gid = gs[0].id;
+    targets = new Set([...targets].filter(id => gs.some(g => g.id === id)));
+    if (!targets.size) targets.add(gid);
+    renderTargets();
     $('#grp').innerHTML = gs.map(g => `<option value="${esc(g.id)}" ${g.id === gid ? 'selected' : ''}>${esc(g.name)} (ค้าง ${g.pending})</option>`).join('');
     $('#grp-wrap').hidden = false;
     $('#grp-count').textContent = gs.length;
@@ -180,6 +192,19 @@ $('#grp-del').onclick = async () => {
 };
 $('#grp').onchange = (e) => { gid = e.target.value; localStorage.setItem('hwgid', gid); refresh(); };
 
+function renderTargets(){
+  const html = `<fieldset class="tg"><legend>ส่งถึงกลุ่มไหนบ้าง</legend>` + GS.map(g =>
+    `<label class="check"><input type="checkbox" class="tg-cb" value="${esc(g.id)}" ${targets.has(g.id) ? 'checked' : ''}> ${esc(g.name)}</label>`).join('') + `</fieldset>`;
+  document.querySelectorAll('.tg-box').forEach(b => b.innerHTML = html);
+}
+document.addEventListener('change', (ev) => {
+  if (!ev.target.classList.contains('tg-cb')) return;
+  ev.target.checked ? targets.add(ev.target.value) : targets.delete(ev.target.value);
+  localStorage.setItem('hwtg', JSON.stringify([...targets]));
+  renderTargets();
+});
+const needTargets = () => targets.size ? [...targets] : (toast('ติ๊กเลือกกลุ่มที่จะส่งอย่างน้อย 1 กลุ่ม', true), null);
+
 function tab(w){
   $('#p-hw').hidden = w !== 'hw'; $('#p-set').hidden = w !== 'set';
   $('#t-hw').setAttribute('aria-selected', w === 'hw'); $('#t-set').setAttribute('aria-selected', w === 'set');
@@ -189,13 +214,17 @@ $('#t-hw').onclick = () => tab('hw'); $('#t-set').onclick = () => tab('set');
 $('#add').onclick = async (ev) => {
   const subject = $('#f-subject').value.trim(), title = $('#f-title').value.trim(), due = $('#f-due').value;
   if (!subject || !title || !due) return toast('กรอกวิชา ชื่องาน และกำหนดส่งให้ครบ', true);
+  const ids = needTargets(); if (!ids) return;
+  const now = $('#f-now').checked;
   ev.target.disabled = true;
-  try {
-    const r = await api('POST', `/groups/${encodeURIComponent(gid)}/homework`, { subject, title, due, notifyNow: $('#f-now').checked });
-    ['#f-subject','#f-title','#f-due'].forEach(i => $(i).value = '');
-    toast(r.notified ? 'บันทึกแล้ว และบอทประกาศในกลุ่มแล้ว' : $('#f-now').checked ? 'บันทึกแล้ว แต่บอทส่งเข้ากลุ่มไม่ได้' : 'บันทึกการบ้านแล้ว', $('#f-now').checked && !r.notified);
-    await refresh();
-  } catch(e){ toast(e.message, true); }
+  const rs = await Promise.allSettled(ids.map(id =>
+    api('POST', `/groups/${encodeURIComponent(id)}/homework`, { subject, title, due, notifyNow: now })));
+  const ok = rs.filter(r => r.status === 'fulfilled');
+  const sent = ok.filter(r => r.value.notified).length;
+  if (ok.length) ['#f-subject','#f-title','#f-due'].forEach(i => $(i).value = '');
+  const bad = ok.length < ids.length || (now && sent < ok.length);
+  toast(`บันทึก ${ok.length}/${ids.length} กลุ่ม` + (now ? ` · บอทประกาศสำเร็จ ${sent} กลุ่ม` : ''), bad);
+  await init();
   ev.target.disabled = false;
 };
 
@@ -215,17 +244,21 @@ const readSettings = () => ({
   days: [...document.querySelectorAll('#days input:checked')].map(i => +i.value),
   hour: +$('#s-hour').value,
 });
+const saveAll = (ids) => Promise.allSettled(ids.map(id => api('PUT', `/groups/${encodeURIComponent(id)}/settings`, readSettings())));
 $('#save').onclick = async () => {
-  try { await api('PUT', `/groups/${encodeURIComponent(gid)}/settings`, readSettings()); toast('บันทึกการตั้งค่าแล้ว'); await refresh(); }
-  catch(e){ toast(e.message, true); }
+  const ids = needTargets(); if (!ids) return;
+  const rs = await saveAll(ids);
+  const n = rs.filter(r => r.status === 'fulfilled').length;
+  toast(`บันทึกการตั้งค่าแล้ว ${n}/${ids.length} กลุ่ม`, n < ids.length);
+  await refresh();
 };
 $('#test').onclick = async (ev) => {
+  const ids = needTargets(); if (!ids) return;
   ev.target.disabled = true;
-  try {
-    await api('PUT', `/groups/${encodeURIComponent(gid)}/settings`, readSettings());
-    await api('POST', `/groups/${encodeURIComponent(gid)}/remind`);
-    toast('บอทส่งแจ้งเตือนแล้ว ดูในกลุ่มได้เลย');
-  } catch(e){ toast(e.message, true); }
+  await saveAll(ids);
+  const rs = await Promise.allSettled(ids.map(id => api('POST', `/groups/${encodeURIComponent(id)}/remind`)));
+  const n = rs.filter(r => r.status === 'fulfilled').length;
+  toast(`บอทส่งแจ้งเตือนแล้ว ${n}/${ids.length} กลุ่ม`, n < ids.length);
   ev.target.disabled = false;
 };
 
